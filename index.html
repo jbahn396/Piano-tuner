@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>실시간 피아노 튜너</title>
+</head>
+<body>
+  <h1>실시간 피아노 튜너</h1>
+  <canvas id="canvas" width="600" height="200" style="border:1px solid #ccc;"></canvas>
+  <p id="frequency">주파수: 감지 중...</p>
+  <p id="error"></p>
+
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const freqText = document.getElementById('frequency');
+    const errorText = document.getElementById('error');
+
+    async function start() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const source = audioCtx.createMediaStreamSource(stream);
+        const analyser = audioCtx.createAnalyser();
+        analyser.fftSize = 2048;
+
+        const bufferLength = analyser.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+        source.connect(analyser);
+
+        function getDominantFrequency() {
+          analyser.getByteFrequencyData(dataArray);
+          let maxVal = -Infinity;
+          let maxIndex = -1;
+          for (let i = 0; i < bufferLength; i++) {
+            if (dataArray[i] > maxVal) {
+              maxVal = dataArray[i];
+              maxIndex = i;
+            }
+          }
+          const nyquist = audioCtx.sampleRate / 2;
+          const freq = maxIndex * nyquist / bufferLength;
+          return freq.toFixed(2);
+        }
+
+        function draw() {
+          requestAnimationFrame(draw);
+          analyser.getByteFrequencyData(dataArray);
+
+          ctx.fillStyle = 'white';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.beginPath();
+          ctx.moveTo(0, canvas.height - dataArray[0]);
+
+          for (let i = 1; i < bufferLength; i++) {
+            ctx.lineTo(i * canvas.width / bufferLength, canvas.height - dataArray[i]);
+          }
+          ctx.strokeStyle = 'blue';
+          ctx.stroke();
+
+          const dominantFreq = getDominantFrequency();
+          freqText.textContent = `주파수: ${dominantFreq} Hz`;
+        }
+
+        draw();
+
+      } catch (err) {
+        errorText.textContent = "오류 발생: " + err.message;
+        console.error(err);
+      }
+    }
+
+    start();
+  </script>
+</body>
+</html>
