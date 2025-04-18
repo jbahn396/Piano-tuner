@@ -8,69 +8,71 @@
   <h1>실시간 피아노 튜너</h1>
   <canvas id="canvas" width="600" height="200" style="border:1px solid #ccc;"></canvas>
   <p id="frequency">주파수: 감지 중...</p>
-  <p id="error"></p>
 
   <script>
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
-    const freqText = document.getElementById('frequency');
-    const errorText = document.getElementById('error');
+    const freqDisplay = document.getElementById('frequency');
 
-    async function start() {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        const source = audioCtx.createMediaStreamSource(stream);
-        const analyser = audioCtx.createAnalyser();
-        analyser.fftSize = 2048;
+    let audioContext;
+    let analyser;
+    let dataArray;
+    let bufferLength;
 
-        const bufferLength = analyser.frequencyBinCount;
-        const dataArray = new Uint8Array(bufferLength);
-        source.connect(analyser);
+    function getPitchFromFFT(data, sampleRate) {
+      let maxAmp = 0;
+      let maxIndex = 0;
 
-        function getDominantFrequency() {
-          analyser.getByteFrequencyData(dataArray);
-          let maxVal = -Infinity;
-          let maxIndex = -1;
-          for (let i = 0; i < bufferLength; i++) {
-            if (dataArray[i] > maxVal) {
-              maxVal = dataArray[i];
-              maxIndex = i;
-            }
-          }
-          const nyquist = audioCtx.sampleRate / 2;
-          const freq = maxIndex * nyquist / bufferLength;
-          return freq.toFixed(2);
+      for (let i = 1; i < data.length; i++) {
+        if (data[i] > maxAmp) {
+          maxAmp = data[i];
+          maxIndex = i;
         }
+      }
 
-        function draw() {
-          requestAnimationFrame(draw);
-          analyser.getByteFrequencyData(dataArray);
+      const frequency = maxIndex * sampleRate / data.length;
+      return frequency;
+    }
 
-          ctx.fillStyle = 'white';
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
-          ctx.beginPath();
-          ctx.moveTo(0, canvas.height - dataArray[0]);
+    async function initTuner() {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      const source = audioContext.createMediaStreamSource(stream);
 
-          for (let i = 1; i < bufferLength; i++) {
-            ctx.lineTo(i * canvas.width / bufferLength, canvas.height - dataArray[i]);
-          }
-          ctx.strokeStyle = 'blue';
-          ctx.stroke();
+      analyser = audioContext.createAnalyser();
+      analyser.fftSize = 2048;
+      bufferLength = analyser.frequencyBinCount;
+      dataArray = new Uint8Array(bufferLength);
 
-          const dominantFreq = getDominantFrequency();
-          freqText.textContent = `주파수: ${dominantFreq} Hz`;
-        }
+      source.connect(analyser);
 
-        draw();
+      draw();
+    }
 
-      } catch (err) {
-        errorText.textContent = "오류 발생: " + err.message;
-        console.error(err);
+    function draw() {
+      requestAnimationFrame(draw);
+      analyser.getByteFrequencyData(dataArray);
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.beginPath();
+      for (let i = 0; i < bufferLength; i++) {
+        const x = i * canvas.width / bufferLength;
+        const y = canvas.height - (dataArray[i] / 255) * canvas.height;
+        ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+
+      const pitch = getPitchFromFFT(dataArray, audioContext.sampleRate);
+
+      // 주파수 범위 제한: G#0 (~26Hz) ~ C#8 (~4435Hz)
+      if (pitch !== -1 && pitch >= 26 && pitch <= 4435) {
+        freqDisplay.textContent = `주파수: ${pitch.toFixed(2)} Hz`;
+      } else {
+        freqDisplay.textContent = "주파수: 감지 중...";
       }
     }
 
-    start();
+    initTuner();
   </script>
 </body>
 </html>
